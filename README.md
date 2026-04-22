@@ -1,4 +1,4 @@
-# Exam 05
+# STUDY GUIDE FOR PYTHON
 
 ## This repository contains my solutions for the `42 exam 05`.
 
