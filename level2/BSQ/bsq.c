@@ -1,97 +1,145 @@
 #include "bsq.h"
 
-void destructor(char **map, int size) {
-	while (size && (free(*(map + --size)), 1));
+void	free_map(char **map, int rows)
+{
+	while (rows > 0)
+		free(map[--rows]);
 	free(map);
 }
 
-int parsing(FILE *stream, meta *info) {
-	if (fscanf(stream, "%d%c%c%c%c\n", &info->height, &info->empty, &info->obstacle, &info->full, (char *)&info->width) != 5
-		|| info->width != 10 || !info->height || !info->empty || !info->obstacle || !info->full
-		|| info->empty == info->obstacle || info->empty == info->full || info->obstacle == info->full)
-		printf("Error: invalid map\n");
-	else errno = EXIT_SUCCESS;
-	return errno;
+void	free_dp(int **dp, int rows)
+{
+	while (rows > 0)
+		free(dp[--rows]);
+	free(dp);
 }
 
-int storing(FILE *stream, bsq *data) {
-	data->map = malloc(8 * data->info.height);
-	if (!data->map) { printf("Error: failure memory allocation\n"); return errno; }
-	for (int i = 0; i < data->info.height + 1; i++) {
-		char  *line = NULL;
-		size_t len  = 0;
-		ssize_t r   = getline(&line, &len, stream);
-		if (errno) { printf("Error: failure memory allocation\n"); destructor(data->map, i); break; }
-		if (r == -1) {
-			if (i == data->info.height) break;
-			printf("Error: invalid map\n"); destructor(data->map, i); errno = EXIT_FAILURE; break;
+int	error(const char *msg)
+{
+	printf("%s\n", msg);
+	return (0);
+}
+
+int	parse_header(FILE *stream, t_map *m)
+{
+	char	nl;
+
+	if (fscanf(stream, "%d%c%c%c%c",
+		&m->rows, &m->empty, &m->obstacle, &m->full, &nl) != 5
+		|| nl != '\n' || m->rows <= 0
+		|| m->empty == m->obstacle
+		|| m->empty == m->full
+		|| m->obstacle == m->full)
+		return error("Error: invalid map");
+	return (1);
+}
+
+int	read_map(FILE *stream, t_map *m)
+{
+	m->grid = malloc(sizeof(char *) * m->rows);
+	if (!m->grid)
+		return error("Error: malloc failure");
+	m->cols = 0;
+	for (int i = 0; i < m->rows; i++)
+	{
+		char	*line = NULL;
+		size_t	cap   = 0;
+		ssize_t	len   = getline(&line, &cap, stream);
+
+		if (len > 0 && line[len - 1] == '\n')
+			line[--len] = '\0';
+		if (len <= 0 || (m->cols > 0 && (int)len != m->cols))
+		{
+			free(line);
+			free_map(m->grid, i);
+			return error("Error: invalid map");
 		}
-		if (line[r - 1] == '\n') line[r - 1] = 0;
-		len = 0;
-		while (*(line + len) && ++len);
-		if ((i && (int)len != data->info.width) || !len) errno = EXIT_FAILURE;
-		else data->info.width = len;
-		data->map[i] = line;
-		while (!errno && *line) {
-			if (*line != data->info.empty && *line != data->info.obstacle) errno = EXIT_FAILURE;
-			++line;
+		m->cols = (int)len;
+		for (int j = 0; j < (int)len; j++)
+		{
+			if (line[j] != m->empty && line[j] != m->obstacle)
+			{
+				free(line);
+				free_map(m->grid, i);
+				return error("Error: invalid map");
+			}
 		}
-		if (errno) { destructor(data->map, i + 1); printf("Error: invalid map\n"); break; }
+		m->grid[i] = line;
 	}
-	return errno;
+	return (1);
 }
 
-int minimoon(int a, int b, int c) {
-	if (!a || !b || !c) return 1;
+int	min3(int a, int b, int c)
+{
 	if (a > b) a = b;
 	if (a > c) a = c;
-	return a + 1;
+	return (a);
 }
 
-void selectSquire(bsq data) {
-	for (int i = 0; i < data.info.height; i++)
-		for (int j = 0; j < data.info.width; j++)
-			if (data.solve.db[i][j] == 1) {
-				if (i && j) data.solve.db[i][j] = minimoon(data.solve.db[i-1][j], data.solve.db[i-1][j-1], data.solve.db[i][j-1]);
-				if (data.solve.size < data.solve.db[i][j]) {
-					data.solve.size = data.solve.db[i][j];
-					data.solve.i = i - data.solve.size + 1;
-					data.solve.j = j - data.solve.size + 1;
-				}
+void	solve(t_map *m)
+{
+	int	**dp = malloc(sizeof(int *) * m->rows);
+	if (!dp) { error("Error: malloc failure"); return ; }
+	for (int i = 0; i < m->rows; i++)
+	{
+		if (!(dp[i] = malloc(sizeof(int) * m->cols)))
+		{
+			free_dp(dp, i);
+			error("Error: malloc failure");
+			return ;
+		}
+		for (int j = 0; j < m->cols; j++)
+			dp[i][j] = (m->grid[i][j] != m->obstacle);
+	}
+
+	int	best = 0, br = 0, bc = 0;
+	for (int i = 0; i < m->rows; i++)
+		for (int j = 0; j < m->cols; j++)
+		{
+			if (dp[i][j] && i > 0 && j > 0)
+				dp[i][j] = min3(dp[i-1][j], dp[i-1][j-1], dp[i][j-1]) + 1;
+			if (dp[i][j] > best)
+			{
+				best = dp[i][j];
+				br = i - best + 1;
+				bc = j - best + 1;
 			}
-	for (int i = data.solve.i; i < data.solve.i + data.solve.size; i++)
-		for (int j = data.solve.j; j < data.solve.j + data.solve.size; j++)
-			data.map[i][j] = data.info.full;
-	for (int i = 0; i < data.info.height; i++) printf("%s\n", data.map[i]);
+		}
+	free_dp(dp, m->rows);
+
+	for (int i = br; i < br + best; i++)
+		for (int j = bc; j < bc + best; j++)
+			m->grid[i][j] = m->full;
+	for (int i = 0; i < m->rows; i++)
+		printf("%s\n", m->grid[i]);
 }
 
-int duplicate(bsq *data) {
-	data->solve.db = malloc(8 * data->info.height);
-	if (!data->solve.db) { printf("Error: failure memory allocation\n"); return errno; }
-	for (int i = 0; i < data->info.height; i++) {
-		data->solve.db[i] = malloc(4 * data->info.width);
-		if (!data->solve.db[i]) { destructor((char **)data->solve.db, i); printf("Error: failure memory allocation\n"); errno = EXIT_FAILURE; break; }
-		for (int j = 0; j < data->info.width; j++)
-			data->solve.db[i][j] = data->map[i][j] != data->info.obstacle;
+void	run(FILE *stream)
+{
+	t_map	m = {0};
+
+	if (!parse_header(stream, &m) || !read_map(stream, &m))
+		return ;
+	solve(&m);
+	free_map(m.grid, m.rows);
+}
+
+int	main(int argc, char **argv)
+{
+	if (argc == 1)
+		run(stdin);
+	else if (argc == 2)
+	{
+		FILE	*f = fopen(argv[1], "r");
+		if (!f)
+		{
+			printf("Error: cannot open file %s\n", argv[1]);
+			return (1);
+		}
+		run(f);
+		fclose(f);
 	}
-	return errno;
-}
-
-void biggest_square(FILE *stream) {
-	bsq data = {0};
-	if (parsing(stream, &data.info) || storing(stream, &data)) return;
-	if (!duplicate(&data)) { selectSquire(data); destructor((char **)data.solve.db, data.info.height); }
-	destructor(data.map, data.info.height);
-}
-
-int main(int argc, char **argv) {
-	errno = EXIT_FAILURE;
-	if (argc == 1) biggest_square(stdin);
-	else if (argc == 2) {
-		FILE *stream = fopen(*++argv, "r");
-		if (stream) { biggest_square(stream); fclose(stream); }
-		else printf("Error: cannot open file %s\n", *argv);
-	}
-	else printf("Error: too many arguments\n");
-	return errno;
+	else
+		printf("Error: too many arguments\n");
+	return (0);
 }
