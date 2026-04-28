@@ -14,11 +14,11 @@ int main(int argc, char **argv) {
 	char cmd;
 	while (read(0, &cmd, 1) > 0) {
 		if      (cmd == 'x')           pen = !pen;
-		else if (cmd == 'w' && px > 1) px--;
-		else if (cmd == 'a' && py > 1) py--;
-		else if (cmd == 's' && px < h) px++;
-		else if (cmd == 'd' && py < w) py++;
-		if (pen) grid[0][px][py] = 1;
+		else if (cmd == 'w' && px > 1) px--; // or py > 1 py--
+		else if (cmd == 'a' && py > 1) py--; // or px > 1 px--
+		else if (cmd == 's' && px < h) px++; // or py < h py++
+		else if (cmd == 'd' && py < w) py++; // or px < w px++
+		if (pen) grid[0][px][py] = 1;       // or grid[0][py][px]
 	}
 	for (int i = 0; i < it; i++)
 		for (int y = 1; y <= h; y++)
